@@ -1,0 +1,43 @@
+{
+  "common": {
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "recording": "REC",
+    "stop": "DETENER",
+    "room": "Sala",
+    "participant": "Participante",
+    "sourceLang": "Idioma Origen",
+    "targetLang": "Idioma Destino",
+    "status": "Estado",
+    "logs": "Registros",
+    "noLogs": "Conecta y empieza a grabar para ver transcripciones y traducciones en vivo"
+  },
+  "status": {
+    "connected": "Conectado",
+    "connecting": "Conectando...",
+    "disconnected": "Desconectado",
+    "error": "Error"
+  },
+  "languages": {
+    "auto": "Detectar Automáticamente",
+    "en": "Inglés",
+    "es": "Español",
+    "fr": "Francés",
+    "de": "Alemán",
+    "zh": "Chino",
+    "ja": "Japonés",
+    "ar": "Árabe"
+  },
+  "events": {
+    "vad_end": "Fin de Voz",
+    "transcript": "Transcripción",
+    "translation": "Traducción",
+    "info": "Info",
+    "error": "Error"
+  },
+  "errors": {
+    "micError": "Error de micrófono: {{error}}",
+    "connectionFailed": "Conexión fallida: {{error}}",
+    "websocketError": "Error de WebSocket"
+  }
+}

@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #030712;
+  --fg: #f3f4f6;
+  --muted: #6b7280;
+  --card: #111827;
+  --border: #374151;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --success: #16a34a;
+  --success-hover: #15803d;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, select, button {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+input, select {
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+}
+
+button {
+  border: none;
+  border-radius: 6px;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-success {
+  background: var(--success);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--success-hover);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.btn-secondary {
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #1f2937;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-connected {
+  background: rgba(22, 163, 74, 0.2);
+  color: #86efac;
+  border: 1px solid var(--success);
+}
+
+.status-connecting {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde047;
+  border: 1px solid var(--warning);
+}
+
+.status-error {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+  border: 1px solid var(--danger);
+}
+
+.status-disconnected {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+  border: 1px solid var(--border);
+}
+
+.log-entry {
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.log-transcript {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: var(--primary);
+}
+
+.log-translation {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: var(--success);
+}
+
+.log-vad {
+  background: rgba(147, 51, 234, 0.15);
+  border-color: #9333ea;
+}
+
+.log-error {
+  background: rgba(220, 38, 38, 0.15);
+  border-color: var(--danger);
+}
+
+.log-info {
+  background: rgba(107, 114, 128, 0.1);
+  border-color: var(--border);
+}
+
+.log-time {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-right: 0.5rem;
+}
+
+.log-lang {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 0.5rem;
+  font-weight: 500;
+}
+
+.log-event {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 0.5rem;
+  font-weight: 600;
+}
