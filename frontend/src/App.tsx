@@ -905,6 +905,41 @@ function WaveformVisualizer({
   )
 }
 
+function InterruptionIndicator({ 
+  isInterrupting, 
+  ttsPlaying,
+  onInterrupt 
+}: { 
+  isInterrupting: boolean
+  ttsPlaying: boolean
+  onInterrupt: () => void 
+}) {
+  if (!ttsPlaying) return null
+
+  return (
+    <div className={`mb-4 p-3 rounded-lg border transition-all duration-200 ${
+      isInterrupting 
+        ? 'bg-red-900/30 border-red-500 animate-pulse' 
+        : 'bg-gray-800/50 border-gray-700'
+    }`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${isInterrupting ? 'bg-red-500 animate-pulse' : 'bg-gray-600'}`} />
+          <span className={`text-sm font-medium ${isInterrupting ? 'text-red-300' : 'text-gray-400'}`}>
+            {isInterrupting ? '🎤 Speaking over TTS...' : 'TTS Playing - Speak to interrupt'}
+          </span>
+        </div>
+        <button
+          onClick={onInterrupt}
+          className="px-3 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+        >
+          Stop TTS
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [roomId, setRoomId] = useState('room-1')
   const [participantId, setParticipantId] = useState(() => `user-${Math.random().toString(36).slice(2, 6)}`)
@@ -915,6 +950,7 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle')
   const [ttsPlaying, setTtsPlaying] = useState(false)
+  const [isInterrupting, setIsInterrupting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
@@ -1048,6 +1084,32 @@ function App() {
     }
   }, [])
 
+  const stopTts = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+    }
+    ttsQueueRef.current = []
+    setTtsPlaying(false)
+    setIsInterrupting(false)
+    setPipelineStage('idle')
+  }, [])
+
+  const detectInterruption = useCallback((level: number) => {
+    if (ttsPlaying && level > settings.interruptThresholdDb / 100) {
+      setIsInterrupting(true)
+      // Auto-stop TTS after 500ms of interruption
+      setTimeout(() => {
+        if (ttsPlaying) {
+          stopTts()
+          addLog({ text: 'TTS interrupted by user', event: 'info', ts: Date.now() })
+        }
+      }, 500)
+    } else {
+      setIsInterrupting(false)
+    }
+  }, [ttsPlaying, settings.interruptThresholdDb, stopTts, addLog])
+
   const connect = useCallback(async () => {
     setStatus('connecting')
     setPipelineStage('idle')
@@ -1164,9 +1226,29 @@ function App() {
         if (localMuted) return // Don't send audio when muted
         const input = e.inputBuffer.getChannelData(0)
         const pcm16 = new Int16Array(input.length)
+        
+        // Calculate audio level for interruption detection
+        let sum = 0
         for (let i = 0; i < input.length; i++) {
           pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(input[i] * 32768)))
+          sum += Math.abs(input[i])
         }
+        const avgLevel = sum / input.length
+        
+        // Detect interruption when speaking over TTS
+        if (ttsPlaying && avgLevel > 0.1) {
+          setIsInterrupting(true)
+          // Auto-stop TTS after 500ms of interruption
+          setTimeout(() => {
+            if (ttsPlaying) {
+              stopTts()
+              addLog({ text: 'TTS interrupted by user', event: 'info', ts: Date.now() })
+            }
+          }, 500)
+        } else if (ttsPlaying) {
+          setIsInterrupting(false)
+        }
+        
         wsRef.current.send(pcm16.buffer)
       }
 
@@ -1392,6 +1474,13 @@ function App() {
             isMuted={localMuted} 
             audioLevel={0} 
             className="mb-4"
+          />
+
+          {/* Interruption Indicator */}
+          <InterruptionIndicator 
+            isInterrupting={isInterrupting}
+            ttsPlaying={ttsPlaying}
+            onInterrupt={stopTts}
           />
 
           <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
