@@ -1,7 +1,6 @@
 #!/bin/bash
-set -euo pipefail
 
-# VizTR Meet - Deploy Script
+# VizTR Meet Deployment Script
 # Usage: ./deploy.sh [command]
 # Commands: setup, pull, up, down, logs, status
 
@@ -27,8 +26,7 @@ cmd_setup() {
     fi
     
     if ! docker compose version &>/dev/null; then
-        err "Docker Compose v2 not found"
-        exit 1
+        warn "Using docker compose v1 (fallback)"
     fi
 
     if [ ! -f .env ]; then
