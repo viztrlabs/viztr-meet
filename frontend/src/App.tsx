@@ -34,9 +34,132 @@ type Settings = {
   ttsVoice: string
 }
 
-type Status = 'disconnected' | 'connecting' | 'connected' | 'error'
+type User = {
+  id: string
+  name: string
+  email: string
+}
 
-type PipelineStage = 'idle' | 'vad' | 'asr' | 'translate' | 'tts' | 'playing'
+function AuthScreen({ onLogin }: { onLogin: (user: User, token: string) => void }) {
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      const endpoint = isSignUp ? '/auth/signup' : '/auth/login'
+      const body = isSignUp ? { name, email, password } : { email, password }
+      
+      const res = await fetch(`${BACKEND}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.detail || 'Authentication failed')
+      }
+
+      localStorage.setItem('viztr_token', data.token)
+      localStorage.setItem('viztr_user', JSON.stringify(data.user))
+      onLogin(data.user, data.token)
+    } catch (err: any) {
+      setError(err.message || 'Connection failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">VizTR Meet</h1>
+          <p className="text-gray-400">Real-time voice translation for everyone</p>
+        </div>
+        
+        <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8 shadow-xl">
+          <h2 className="text-xl font-semibold text-white mb-6">
+            {isSignUp ? 'Create Account' : 'Welcome Back'}
+          </h2>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Your name"
+                  required
+                />
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+            </div>
+            
+            {error && (
+              <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+            
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            >
+              {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
+            </button>
+          </form>
+          
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-blue-400 hover:text-blue-300 text-sm"
+            >
+              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ParticipantItem({ participant, onToggleMute, isLocal }: { 
   participant: Participant
@@ -807,6 +930,28 @@ function App() {
     ttsVoice: 'en-US-AriaNeural',
   })
 
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('viztr_user')
+    return saved ? JSON.parse(saved) : null
+  })
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('viztr_token'))
+
+  const handleLogin = useCallback((newUser: User, newToken: string) => {
+    setUser(newUser)
+    setToken(newToken)
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('viztr_token')
+    localStorage.removeItem('viztr_user')
+    setUser(null)
+    setToken(null)
+  }, [])
+
+  if (!user || !token) {
+    return <AuthScreen onLogin={handleLogin} />
+  }
+
   const onSettingsChange = useCallback((s: Partial<Settings>) => {
     setSettings(prev => ({ ...prev, ...s }))
   }, [])
@@ -1199,6 +1344,20 @@ function App() {
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               </button>
+              <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-700">
+                <span className="text-sm text-gray-300">{user.name}</span>
+                <button 
+                  onClick={handleLogout}
+                  className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                  aria-label="Logout"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </header>
