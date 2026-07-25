@@ -132,6 +132,131 @@ function Overlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
   )
 }
 
+function WaveformVisualizer({ 
+  isRecording, 
+  isMuted, 
+  audioLevel = 0 
+}: { 
+  isRecording: boolean
+  isMuted: boolean
+  audioLevel: number
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animationRef = useRef<number>()
+  const historyRef = useRef<number[]>(new Array(60).fill(0))
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Set canvas size
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width * window.devicePixelRatio
+      canvas.height = rect.height * window.devicePixelRatio
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    let frame = 0
+    const animate = () => {
+      frame++
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const width = canvas.width / window.devicePixelRatio
+      const height = canvas.height / window.devicePixelRatio
+
+      // Clear
+      ctx.clearRect(0, 0, width, height)
+
+      // Draw background
+      ctx.fillStyle = '#030712'
+      ctx.fillRect(0, 0, width, height)
+
+      // Center line
+      ctx.strokeStyle = '#1f2937'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(0, height / 2)
+      ctx.lineTo(width, height / 2)
+      ctx.stroke()
+
+      // Draw waveform
+      const barWidth = width / 60
+      const centerY = height / 2
+
+      for (let i = 0; i < 60; i++) {
+        const level = historyRef.current[i] || 0
+        const barHeight = (level / 255) * (height / 2) * 0.8
+        const x = i * (width / 60) + barWidth / 2
+        
+        // Color based on level
+        const intensity = Math.min(1, level / 128)
+        const hue = 120 - intensity * 120 // Green to red
+        const color = `hsl(${hue}, 80%, 50%)`
+        
+        ctx.fillStyle = color
+        const barHeight = barHeight * 2
+        ctx.fillRect(
+          x - 1.5,
+          centerY - barHeight / 2,
+          3,
+          barHeight
+        )
+      }
+
+      // Draw center line indicator
+      ctx.strokeStyle = '#374151'
+      ctx.lineWidth = 1
+      ctx.setLineDash([5, 5])
+      ctx.beginPath()
+      ctx.moveTo(0, centerY)
+      ctx.lineTo(width, centerY)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Muted indicator
+      if (isRecording && isMuted) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'
+        ctx.font = 'bold 12px system-ui'
+        ctx.textAlign = 'center'
+        ctx.fillText('🔇 MUTED', canvas.width / 2 / window.devicePixelRatio, 20)
+      }
+
+      animationRef.current = requestAnimationFrame(animate)
+    }
+
+    animate()
+    return () => cancelAnimationFrame(animationRef.current!)
+  }, [isRecording, isMuted])
+
+  // Update audio level history (called from outside)
+  const updateLevel = useCallback((level: number) => {
+    historyRef.current.shift()
+    historyRef.current.push(level)
+  }, [])
+
+  return (
+    <div className="relative w-full h-24 bg-gray-950 rounded-lg border border-gray-800 overflow-hidden">
+      <canvas 
+        ref={canvasRef}
+        className="w-full h-full"
+        aria-label="Audio waveform visualization"
+      />
+      <div className="absolute bottom-2 left-2 right-2 flex justify-between text-xs text-gray-500">
+        <span>-60 dB</span>
+        <span>0 dB</span>
+        <span>-60 dB</span>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPanel({ 
   settings, 
   onSettingsChange, 
@@ -314,6 +439,105 @@ function SettingsPanel({
         >
           Close
         </button>
+      </div>
+    </div>
+  )
+}
+
+}
+}
+
+function WaveformVisualizer({ 
+  isRecording, 
+  isMuted, 
+  audioLevel 
+}: { 
+  isRecording: boolean
+  isMuted: boolean
+  audioLevel: number
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animationRef = useRef<number>(null)
+  const barsRef = useRef<number[]>(Array(32).fill(0))
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const width = canvas.width = canvas.offsetWidth * window.devicePixelRatio
+    const height = canvas.height = canvas.offsetHeight * window.devicePixelRatio
+
+    const draw = () => {
+      // Decay bars
+      barsRef.current = barsRef.current.map(v => Math.max(v * 0.92, 0))
+      
+      // Add new value if recording and not muted
+      if (audioLevel > 0) {
+        const target = Math.min(audioLevel * 0.9, 1)
+        barsRef.current[0] = Math.max(barsRef.current[0], target)
+        // Shift bars
+        for (let i = barsRef.current.length - 1; i > 0; i--) {
+          barsRef.current[i] = Math.max(barsRef.current[i], barsRef.current[i - 1] * 0.7)
+        }
+      }
+
+      // Clear
+      ctx.clearRect(0, 0, width, height)
+
+      // Draw bars
+      const barCount = barsRef.current.length
+      const barWidth = width / barCount * 0.7
+      const gap = width / barCount * 0.3
+      const centerY = height / 2
+
+      barsRef.current.forEach((value, i) => {
+        const barHeight = value * height * 0.45
+        const x = i * (barWidth + gap) + gap / 2
+        
+        // Gradient color based on level
+        const hue = value > 0.7 ? 0 : value > 0.4 ? 45 : 120
+        const saturation = value > 0.7 ? 100 : 80
+        const lightness = value > 0.7 ? 50 : 55
+
+        const gradient = ctx.createLinearGradient(0, centerY - barHeight, 0, centerY + barHeight)
+        gradient.addColorStop(0, `hsl(${hue}, ${saturation}%, ${lightness}%)`)
+        gradient.addColorStop(1, `hsl(${hue}, ${saturation}%, ${lightness - 20}%)`)
+
+        ctx.fillStyle = gradient
+        
+        // Draw mirrored bars (top and bottom)
+        const radius = 3
+        const y = centerY - barHeight / 2
+        const h = barHeight
+        
+        ctx.beginPath()
+        ctx.roundRect(x, centerY - barHeight / 2, barWidth, barHeight, radius)
+        ctx.fill()
+      })
+
+      animationRef.current = requestAnimationFrame(draw)
+    }
+
+    draw()
+    return () => cancelAnimationFrame(animationRef.current!)
+  }, [audioLevel])
+
+  if (audioLevel === 0) return null
+
+  return (
+    <div className="mb-4">
+      <canvas
+        ref={canvasRef}
+        className="w-full h-16 bg-gray-900 rounded-lg border border-gray-700"
+        style={{ width: '100%', height: '64px' }}
+        aria-label="Audio level meter"
+      />
+      <div className="flex justify-between text-xs text-gray-500 mt-1">
+        <span>🎤 Recording</span>
+        <span>{Math.round(audioLevel * 100)}%</span>
       </div>
     </div>
   )
@@ -741,6 +965,14 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Waveform Visualizer */}
+          <WaveformVisualizer 
+            isRecording={recording} 
+            isMuted={localMuted} 
+            audioLevel={0} 
+            className="mb-4"
+          />
 
           <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
             <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
