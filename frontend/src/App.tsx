@@ -15,6 +15,310 @@ type Status = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 type PipelineStage = 'idle' | 'vad' | 'asr' | 'translate' | 'tts' | 'playing'
 
+type Participant = {
+  id: string
+  name: string
+  isLocal: boolean
+  muted: boolean
+  speaking: boolean
+  joinedAt: number
+}
+
+type Settings = {
+  vadThreshold: number
+  vadMinSilenceMs: number
+  chunkTargetMs: number
+  noiseFilter: boolean
+  vadMaxBufferMs: number
+  interruptThresholdDb: number
+  ttsVoice: string
+}
+
+type Status = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+type PipelineStage = 'idle' | 'vad' | 'asr' | 'translate' | 'tts' | 'playing'
+
+function ParticipantItem({ participant, onToggleMute, isLocal }: { 
+  participant: Participant
+  onToggleMute: (id: string) => void
+  isLocal: boolean
+}) {
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg ${participant.speaking ? 'bg-green-900/30 border-green-500/50' : 'bg-gray-800/50'} border transition-all duration-200`}>
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${participant.muted ? 'bg-red-600' : participant.isLocal ? 'bg-blue-600' : 'bg-purple-600'}`}>
+        {participant.name.charAt(0).toUpperCase()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-white truncate">{participant.name}</span>
+          {participant.isLocal && <span className="text-xs bg-blue-600 px-1.5 py-0.5 rounded">You</span>}
+          {participant.speaking && <span className="text-xs bg-green-600 px-1.5 py-0.5 rounded animate-pulse">🎤 Speaking</span>}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-400 mt-1">
+          <span className="flex items-center gap-1">
+            {participant.muted ? '🔇' : '🔊'} {participant.muted ? 'Muted' : 'Live'}
+          </span>
+        </div>
+      </div>
+      <button
+        onClick={() => onToggleMute(participant.id)}
+        className={`p-2 rounded-lg transition-colors ${participant.muted ? 'bg-red-600/20 hover:bg-red-600/40' : 'bg-gray-700/50 hover:bg-gray-600'}`}
+        aria-label={participant.muted ? 'Unmute' : 'Mute'}
+        title={participant.muted ? 'Unmute' : 'Mute'}
+        disabled={!participant.isLocal}
+      >
+        {participant.muted ? '🔇' : '🔊'}
+      </button>
+    </div>
+  )
+}
+
+function ParticipantPanel({ 
+  participants, 
+  localParticipantId, 
+  onToggleMute,
+  onClose 
+}: { 
+  participants: any[]
+  localParticipantId: string
+  onToggleMute: (id: string) => void
+  onClose: () => void
+}) {
+  const sortedParticipants = [...participants].sort((a, b) => {
+    if (a.id === localParticipantId) return -1
+    if (b.id === localParticipantId) return 1
+    return a.joinedAt - b.joinedAt
+  })
+
+  return (
+    <div className="fixed right-0 top-0 bottom-0 w-72 bg-gray-900 border-l border-gray-700 z-40 flex flex-col animate-slide-in">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <h2 className="font-semibold text-white">Participants ({participants.length})</h2>
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Close panel">
+          ✕
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {participants.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No participants yet</p>
+        ) : (
+          participants.map(p => (
+            <ParticipantItem
+              key={p.id}
+              participant={p}
+              onToggleMute={(id) => (id === p.id ? (p.muted ? false : true) : null) && (p.muted ? false : true) && true}
+              isLocal={p.id === 'local'}
+            />
+          ))
+        )}
+      </div>
+      <div className="p-3 border-t border-gray-700">
+        <p className="text-xs text-gray-500 text-center">
+          Click microphone icon to mute/unmute
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Overlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null
+  return (
+    <div 
+      className="fixed inset-0 bg-black/50 z-30"
+      onClick={onClose}
+      aria-hidden="true"
+    />
+  )
+}
+
+function SettingsPanel({ 
+  settings, 
+  onSettingsChange, 
+  onClose 
+}: { 
+  settings: Settings
+  onSettingsChange: (s: Partial<Settings>) => void
+  onClose: () => void
+}) {
+  const voiceOptions = [
+    { value: 'en-US-AriaNeural', label: 'Aria (US English)' },
+    { value: 'en-US-GuyNeural', label: 'Guy (US English)' },
+    { value: 'es-ES-ElviraNeural', label: 'Elvira (Spanish)' },
+    { value: 'fr-FR-DeniseNeural', label: 'Denise (French)' },
+    { value: 'de-DE-KatjaNeural', label: 'Katja (German)' },
+    { value: 'ja-JP-NanamiNeural', label: 'Nanami (Japanese)' },
+    { value: 'zh-CN-XiaoxiaoNeural', label: 'Xiaoxiao (Chinese)' },
+    { value: 'ar-SA-ZariyahNeural', label: 'Zariyah (Arabic)' },
+  ]
+
+  return (
+    <div className="fixed left-0 top-0 bottom-0 w-80 bg-gray-900 border-r border-gray-700 z-40 flex flex-col animate-slide-in">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <h2 className="font-semibold text-white">Settings</h2>
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Close panel">
+          ✕
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* VAD Settings */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400">Voice Activity Detection</h3>
+          
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">VAD Threshold</span>
+              <span className="text-xs text-gray-500">{settings.vadThreshold.toFixed(2)}</span>
+            </label>
+            <input
+              type="range"
+              min="0.1"
+              max="0.9"
+              step="0.05"
+              value={settings.vadThreshold}
+              onChange={e => onSettingsChange({ vadThreshold: parseFloat(e.target.value) })}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none accent-blue-500"
+            />
+            <p className="text-xs text-gray-500">Speech confidence threshold (higher = less sensitive)</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">Min Silence Duration</span>
+              <span className="text-xs text-gray-500">{settings.vadMinSilenceMs}ms</span>
+            </label>
+            <input
+              type="range"
+              min="100"
+              max="1000"
+              step="50"
+              value={settings.vadMinSilenceMs}
+              onChange={e => onSettingsChange({ vadMinSilenceMs: parseInt(e.target.value) })}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none accent-blue-500"
+            />
+            <p className="text-xs text-gray-500">Minimum silence before ending speech segment</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">Max Buffer Duration</span>
+              <span className="text-xs text-gray-500">{settings.vadMaxBufferMs}ms</span>
+            </label>
+            <input
+              type="range"
+              min="1000"
+              max="10000"
+              step="500"
+              value={settings.vadMaxBufferMs}
+              onChange={e => onSettingsChange({ vadMaxBufferMs: parseInt(e.target.value) })}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none accent-blue-500"
+            />
+            <p className="text-xs text-gray-500">Safety ceiling - force release after this duration</p>
+          </div>
+        </div>
+
+        {/* Audio Processing Settings */}
+        <div className="space-y-4 pt-4 border-t border-gray-700">
+          <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400">Audio Processing</h3>
+          
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">Chunk Target Duration</span>
+              <span className="text-xs text-gray-500">{settings.chunkTargetMs}ms</span>
+            </label>
+            <input
+              type="range"
+              min="100"
+              max="1000"
+              step="50"
+              value={settings.chunkTargetMs}
+              onChange={e => onSettingsChange({ chunkTargetMs: parseInt(e.target.value) })}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none accent-blue-500"
+            />
+            <p className="text-xs text-gray-500">Audio buffer window before ASR processing</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">Interrupt Threshold</span>
+              <span className="text-xs text-gray-500">{settings.interruptThresholdDb}dB</span>
+            </label>
+            <input
+              type="range"
+              min="-50"
+              max="-20"
+              step="1"
+              value={settings.interruptThresholdDb}
+              onChange={e => onSettingsChange({ interruptThresholdDb: parseInt(e.target.value) })}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none accent-blue-500"
+            />
+            <p className="text-xs text-gray-500">Audio level that cancels TTS playback</p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-300">Noise Filtering</span>
+            <button
+              onClick={() => onSettingsChange({ noiseFilter: !settings.noiseFilter })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                settings.noiseFilter ? 'bg-blue-600' : 'bg-gray-600'
+              }`}
+              role="switch"
+              aria-checked={settings.noiseFilter}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  settings.noiseFilter ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">Reduce background noise before processing</p>
+        </div>
+
+        {/* TTS Settings */}
+        <div className="pt-4 border-t border-gray-700">
+          <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400">Text-to-Speech</h3>
+          
+          <div className="space-y-2">
+            <label className="block text-sm text-gray-300 mb-1">TTS Voice</label>
+            <select
+              value={settings.ttsVoice}
+              onChange={e => onSettingsChange({ ttsVoice: e.target.value })}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {voiceOptions.map(v => (
+                <option key={v.value} value={v.value}>{v.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500">Voice for translated speech output</p>
+          </div>
+        </div>
+
+        {/* Apply to Server Button */}
+        <div className="pt-4 border-t border-gray-700">
+          <button
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            onClick={() => {
+              // Send settings to server via WebSocket
+              console.log('Apply settings:', settings)
+            }}
+          >
+            Apply Settings
+          </button>
+        </div>
+      </div>
+      <div className="p-4 border-t border-gray-700">
+        <button
+          onClick={onClose}
+          className="w-full text-gray-400 hover:text-white py-2 text-sm"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [roomId, setRoomId] = useState('room-1')
   const [participantId, setParticipantId] = useState(() => `user-${Math.random().toString(36).slice(2, 6)}`)
@@ -25,6 +329,23 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle')
   const [ttsPlaying, setTtsPlaying] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [localMuted, setLocalMuted] = useState(false)
+  const [settings, setSettings] = useState<Settings>({
+    vadThreshold: 0.5,
+    vadMinSilenceMs: 300,
+    chunkTargetMs: 300,
+    noiseFilter: true,
+    vadMaxBufferMs: 3000,
+    interruptThresholdDb: -35,
+    ttsVoice: 'en-US-AriaNeural',
+  })
+
+  const onSettingsChange = useCallback((partial: Partial<Settings>) => {
+    setSettings(prev => ({ ...prev, ...partial }))
+  }, [])
 
   const wsRef = useRef<WebSocket | null>(null)
   const ctxRef = useRef<AudioContext | null>(null)
@@ -32,10 +353,52 @@ function App() {
   const procRef = useRef<ScriptProcessorNode | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const ttsQueueRef = useRef<ArrayBuffer[]>([])
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const audioProcessorRef = useRef<AudioWorkletNode | null>(null)
 
   const addLog = useCallback((entry: LogEntry) => {
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }, [])
+
+  const addParticipant = useCallback((id: string, name: string, isLocal = false) => {
+    setParticipants(prev => {
+      if (prev.some(p => p.id === id)) return prev
+      return [...prev, {
+        id,
+        name,
+        isLocal,
+        muted: false,
+        speaking: false,
+        joinedAt: Date.now()
+      }]
+    })
+  }, [])
+
+  const removeParticipant = useCallback((id: string) => {
+    setParticipants(prev => prev.filter(p => p.id !== id))
+  }, [])
+
+  const toggleMute = useCallback((id: string) => {
+    setParticipants(prev => prev.map(p => 
+      p.id === id ? { ...p, muted: !p.muted } : p
+    ))
+    if (id === 'local') {
+      setLocalMuted(prev => !prev)
+    }
+  }, [])
+
+  const addLog = useCallback((entry: LogEntry) => {
+    setLogs(prev => [entry, ...prev].slice(0, 200))
+  }, [])
+
+  // Add local participant on connect
+  useEffect(() => {
+    if (status === 'connected') {
+      addParticipant('local', participantId, true)
+    } else if (status === 'disconnected') {
+      setParticipants([])
+    }
+  }, [status, participantId, addParticipant])
 
   const playTtsAudio = useCallback(async () => {
     if (ttsQueueRef.current.length === 0) {
@@ -50,7 +413,6 @@ function App() {
     const audioData = ttsQueueRef.current.shift()!
     
     try {
-      // Create blob from PCM16 data and play
       const blob = new Blob([audioData], { type: 'audio/wav' })
       const url = URL.createObjectURL(blob)
       
@@ -64,7 +426,7 @@ function App() {
       
       audioRef.current.onended = () => {
         URL.revokeObjectURL(url)
-        playTtsAudio() // Play next in queue
+        playTtsAudio()
       }
       
       audioRef.current.onerror = () => {
@@ -101,7 +463,6 @@ function App() {
 
       ws.onmessage = (ev) => {
         if (ev.data instanceof Blob) {
-          // Binary TTS audio data
           ev.data.arrayBuffer().then(buffer => {
             ttsQueueRef.current.push(buffer)
             if (!ttsPlaying) {
@@ -115,7 +476,6 @@ function App() {
           const msg = JSON.parse(ev.data)
           addLog({ text: msg.text, lang: msg.lang, event: msg.event, ts: Date.now() })
           
-          // Update pipeline stage based on event
           switch (msg.event) {
             case 'vad_end':
               setPipelineStage('asr')
@@ -125,6 +485,24 @@ function App() {
               break
             case 'translation':
               setPipelineStage('tts')
+              break
+            case 'participant_joined':
+              if (msg.participant_id !== participantId) {
+                addParticipant(msg.participant_id, msg.participant_name || `User ${msg.participant_id.slice(0,6)}`)
+              }
+              break
+            case 'participant_left':
+              removeParticipant(msg.participant_id)
+              break
+            case 'participant_muted':
+              setParticipants(prev => prev.map(p => 
+                p.id === msg.participant_id ? { ...p, muted: msg.muted } : p
+              ))
+              break
+            case 'participant_speaking':
+              setParticipants(prev => prev.map(p => 
+                p.id === msg.participant_id ? { ...p, speaking: msg.speaking } : p
+              ))
               break
             default:
               break
@@ -140,6 +518,7 @@ function App() {
         setPipelineStage('idle')
         setTtsPlaying(false)
         ttsQueueRef.current = []
+        setParticipants([])
         addLog({ text: `Disconnected (code=${e.code})`, event: 'info', ts: Date.now() })
       }
 
@@ -163,6 +542,7 @@ function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
+      localStreamRef.current = stream
 
       const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
       ctxRef.current = ctx
@@ -172,6 +552,7 @@ function App() {
 
       processor.onaudioprocess = (e) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+        if (localMuted) return // Don't send audio when muted
         const input = e.inputBuffer.getChannelData(0)
         const pcm16 = new Int16Array(input.length)
         for (let i = 0; i < input.length; i++) {
@@ -189,7 +570,7 @@ function App() {
     } catch (err) {
       addLog({ text: `Mic error: ${err}`, event: 'error', ts: Date.now() })
     }
-  }, [addLog])
+  }, [addLog, localMuted])
 
   const stopRecording = useCallback(() => {
     if (procRef.current && ctxRef.current) {
@@ -206,11 +587,23 @@ function App() {
     addLog({ text: 'Recording stopped', event: 'info', ts: Date.now() })
   }, [addLog])
 
+  const toggleLocalMute = useCallback(() => {
+    setLocalMuted(prev => !prev)
+    // Notify server about mute status change
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'mute',
+        muted: !localMuted
+      }))
+    }
+  }, [localMuted])
+
   const disconnect = useCallback(() => {
     stopRecording()
     wsRef.current?.close()
     wsRef.current = null
     ttsQueueRef.current = []
+    setParticipants([])
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.src = ''
@@ -258,85 +651,160 @@ function App() {
   }
 
   return (
-    <main style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem' }}>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem' }}>VizTR Meet</h1>
-
-      {/* Pipeline Status Bar */}
-      <div className="flex gap-2 mb-4">
-        {[
-          { key: 'vad', label: 'VAD', stage: 'vad' },
-          { key: 'asr', label: 'ASR', stage: 'asr' },
-          { key: 'translate', label: 'Translate', stage: 'translate' },
-          { key: 'tts', label: 'TTS', stage: 'tts' },
-          { key: 'playing', label: 'Playing', stage: 'playing' },
-        ].map(({ key, label, stage }) => (
-          <div
-            key={key}
-            className={`px-3 py-1 rounded text-sm font-medium ${stageStyles[pipelineStage === stage ? stage : 'idle']} transition-colors`}
-          >
-            {label}
+    <div className="min-h-screen bg-gray-950">
+      <Overlay isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      
+      <ParticipantPanel
+        participants={participants}
+        localParticipantId="local"
+        onToggleMute={toggleMute}
+        onClose={() => setSidebarOpen(false)}
+      />
+      
+      <SettingsPanel
+        settings={settings}
+        onSettingsChange={onSettingsChange}
+        onClose={() => setSettingsOpen(false)}
+      />
+      
+      <Overlay isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Overlay isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      
+      <main style={{ marginRight: sidebarOpen ? '288px' : '0', marginLeft: settingsOpen ? '320px' : '0', transition: 'margin 0.3s ease', minHeight: '100vh' }}>
+        <header className="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 z-20">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                aria-label={sidebarOpen ? 'Hide participants' : 'Show participants'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </button>
+              <h1 className="text-xl font-bold text-white">VizTR Meet</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-1 rounded text-xs font-medium ${statusStyles[status]}`}>
+                {status}
+              </span>
+              <button 
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                aria-label={settingsOpen ? 'Hide settings' : 'Show settings'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 1 9 21.94a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 1 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 1 1 1.51 1.65 1.65 0 0 0 1.82.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 1-1.51 1z" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                aria-label={sidebarOpen ? 'Hide participants' : 'Show participants'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </button>
+            </div>
           </div>
-        ))}
-        {ttsPlaying && (
-          <div className="ml-auto px-3 py-1 rounded text-sm font-medium bg-green-700 text-green-100 animate-pulse">
-            🔊 Playing
+        </header>
+
+        <main style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem' }}>
+          {/* Pipeline Status Bar */}
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: 'vad', label: 'VAD', stage: 'vad' },
+              { key: 'asr', label: 'ASR', stage: 'asr' },
+              { key: 'translate', label: 'Translate', stage: 'translate' },
+              { key: 'tts', label: 'TTS', stage: 'tts' },
+              { key: 'playing', label: 'Playing', stage: 'playing' },
+            ].map(({ key, label, stage }) => (
+              <div
+                key={key}
+                className={`px-3 py-1 rounded text-sm font-medium ${stageStyles[pipelineStage === stage ? stage : 'idle']} transition-colors`}
+              >
+                {label}
+              </div>
+            ))}
+            {ttsPlaying && (
+              <div className="ml-auto px-3 py-1 rounded text-sm font-medium bg-green-700 text-green-100 animate-pulse">
+                🔊 Playing
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Room</span>
-          <input value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="room-1" />
-        </label>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Participant</span>
-          <input value={participantId} onChange={e => setParticipantId(e.target.value)} placeholder="user-xxx" />
-        </label>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Source Lang</span>
-          <select value={sourceLang} onChange={e => setSourceLang(e.target.value)}>
-            {langOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-        </label>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Target Lang</span>
-          <select value={targetLang} onChange={e => setTargetLang(e.target.value)}>
-            {targetLangOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn-primary" onClick={connect} disabled={status === 'connected' || status === 'connecting'}>
-          Connect
-        </button>
-        <button className={recording ? 'btn-danger' : 'btn-success'} onClick={recording ? stopRecording : startRecording} disabled={status !== 'connected'}>
-          {recording ? 'STOP' : 'REC'}
-        </button>
-        <button className="btn-secondary" onClick={disconnect} disabled={status === 'disconnected'}>
-          Disconnect
-        </button>
-        <span className={statusStyles[status]}>{status}</span>
-      </div>
-
-      <div>
-        {logs.map((log, i) => (
-          <div key={i} className={logStyles[log.event] || 'log-entry log-info'}>
-            <span className="log-time">{new Date(log.ts).toLocaleTimeString()}</span>
-            {log.lang && <span className="log-lang">{log.lang}</span>}
-            <span className="log-event">{log.event}</span>
-            <span>{log.text}</span>
+          <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Room</span>
+              <input value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="room-1" />
+            </label>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Participant</span>
+              <input value={participantId} onChange={e => setParticipantId(e.target.value)} placeholder="user-xxx" />
+            </label>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Source Lang</span>
+              <select value={sourceLang} onChange={e => setSourceLang(e.target.value)}>
+                {langOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ width: '120px', color: 'var(--muted)', fontSize: '0.875rem' }}>Target Lang</span>
+              <select value={targetLang} onChange={e => setTargetLang(e.target.value)}>
+                {targetLangOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </label>
           </div>
-        ))}
-        {logs.length === 0 && (
-          <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>
-            Connect and start recording to see live transcripts and translations
-          </p>
-        )}
-      </div>
-      <InstallPrompt />
-    </main>
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn-primary" onClick={connect} disabled={status === 'connected' || status === 'connecting'}>
+              Connect
+            </button>
+            <button className={recording ? 'btn-danger' : 'btn-success'} onClick={recording ? stopRecording : startRecording} disabled={status !== 'connected'}>
+              {recording ? 'STOP' : 'REC'}
+            </button>
+            <button 
+              className={localMuted ? 'btn-danger' : 'btn-secondary'} 
+              onClick={toggleLocalMute}
+              disabled={status !== 'connected'}
+            >
+              {localMuted ? '🔇 Muted' : '🔊 Live'}
+            </button>
+            <button className="btn-secondary" onClick={disconnect} disabled={status === 'disconnected'}>
+              Disconnect
+            </button>
+            <span className={statusStyles[status]}>{status}</span>
+          </div>
+
+          <div>
+            {logs.map((log, i) => (
+              <div key={i} className={logStyles[log.event] || 'log-entry log-info'}>
+                <span className="log-time">{new Date(log.ts).toLocaleTimeString()}</span>
+                {log.lang && <span className="log-lang">{log.lang}</span>}
+                <span className="log-event">{log.event}</span>
+                <span>{log.text}</span>
+              </div>
+            ))}
+            {logs.length === 0 && (
+              <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>
+                Connect and start recording to see live transcripts and translations
+              </p>
+            )}
+          </div>
+          <InstallPrompt />
+        </main>
+      </main>
+      <Overlay isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    </div>
   )
 }
 
