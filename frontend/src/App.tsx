@@ -940,6 +940,80 @@ function InterruptionIndicator({
   )
 }
 
+type MeetingSession = {
+  id: string
+  roomId: string
+  startedAt: number
+  endedAt?: number
+  participants: string[]
+  transcriptCount: number
+  status: 'active' | 'completed'
+}
+
+function MeetingHistory({ 
+  sessions, 
+  onSelect,
+  onClose 
+}: { 
+  sessions: MeetingSession[]
+  onSelect: (session: MeetingSession) => void
+  onClose: () => void 
+}) {
+  const formatDuration = (start: number, end?: number) => {
+    const ms = (end || Date.now()) - start
+    const mins = Math.floor(ms / 60000)
+    const secs = Math.floor((ms % 60000) / 1000)
+    return `${mins}m ${secs}s`
+  }
+
+  const formatDate = (ts: number) => {
+    return new Date(ts).toLocaleString()
+  }
+
+  return (
+    <div className="fixed right-0 top-0 bottom-0 w-80 bg-gray-900 border-l border-gray-700 z-40 flex flex-col animate-slide-in">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <h2 className="font-semibold text-white">Meeting History</h2>
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Close panel">
+          ✕
+        </button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {sessions.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">
+            <p>No meeting history yet</p>
+            <p className="text-sm mt-2">Start a meeting to see it here</p>
+          </div>
+        ) : (
+          sessions.map(session => (
+            <div 
+              key={session.id}
+              className="p-3 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-colors"
+              onClick={() => onSelect(session)}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-white">{session.roomId}</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  session.status === 'active' ? 'bg-green-600 text-green-100' : 'bg-gray-600 text-gray-300'
+                }`}>
+                  {session.status}
+                </span>
+              </div>
+              <div className="text-sm text-gray-400 space-y-1">
+                <p>📅 {formatDate(session.startedAt)}</p>
+                <p>⏱️ {formatDuration(session.startedAt, session.endedAt)}</p>
+                <p>👥 {session.participants.length} participant(s)</p>
+                <p>📝 {session.transcriptCount} transcript(s)</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [roomId, setRoomId] = useState('room-1')
   const [participantId, setParticipantId] = useState(() => `user-${Math.random().toString(36).slice(2, 6)}`)
@@ -954,6 +1028,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [meetingSessions, setMeetingSessions] = useState<MeetingSession[]>([])
   const [participants, setParticipants] = useState<Participant[]>([])
   const [localMuted, setLocalMuted] = useState(false)
   const [settings, setSettings] = useState<Settings>({
@@ -987,10 +1063,6 @@ function App() {
   if (!user || !token) {
     return <AuthScreen onLogin={handleLogin} />
   }
-
-  const onSettingsChange = useCallback((s: Partial<Settings>) => {
-    setSettings(prev => ({ ...prev, ...s }))
-  }, [])
 
   const wsRef = useRef<WebSocket | null>(null)
   const ctxRef = useRef<AudioContext | null>(null)
@@ -1130,6 +1202,17 @@ function App() {
       ws.onopen = () => {
         setStatus('connected')
         addLog({ text: 'WebSocket connected', event: 'info', ts: Date.now() })
+        
+        // Create a new meeting session
+        const newSession: MeetingSession = {
+          id: `session-${Date.now()}`,
+          roomId,
+          startedAt: Date.now(),
+          participants: [participantId],
+          transcriptCount: 0,
+          status: 'active'
+        }
+        setMeetingSessions(prev => [newSession, ...prev])
       }
 
       ws.onmessage = (ev) => {
@@ -1191,6 +1274,13 @@ function App() {
         ttsQueueRef.current = []
         setParticipants([])
         addLog({ text: `Disconnected (code=${e.code})`, event: 'info', ts: Date.now() })
+        
+        // Mark the current session as completed
+        setMeetingSessions(prev => prev.map(session => 
+          session.status === 'active' 
+            ? { ...session, endedAt: Date.now(), status: 'completed' as const }
+            : session
+        ))
       }
 
       ws.onerror = () => {
@@ -1366,6 +1456,17 @@ function App() {
         }}
       />
       
+      {historyOpen && (
+        <MeetingHistory
+          sessions={meetingSessions}
+          onSelect={(session) => {
+            console.log('Selected session:', session)
+            setHistoryOpen(false)
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+      
       <Overlay isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <Overlay isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       
@@ -1412,6 +1513,16 @@ function App() {
                   <line x1="16" y1="13" x2="8" y2="13" />
                   <line x1="16" y1="17" x2="8" y2="17" />
                   <polyline points="10 9 9 9 8 9" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => setHistoryOpen(!historyOpen)}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                aria-label={historyOpen ? 'Hide meeting history' : 'Show meeting history'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
                 </svg>
               </button>
               <button 
