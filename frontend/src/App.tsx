@@ -1014,6 +1014,66 @@ function MeetingHistory({
   )
 }
 
+type ProviderStatus = {
+  name: string
+  type: 'asr' | 'translate' | 'tts'
+  active: boolean
+  fallback?: string
+  lastError?: string
+}
+
+function FallbackIndicator({ 
+  providers 
+}: { 
+  providers: ProviderStatus[] 
+}) {
+  const hasFallbacks = providers.some(p => p.fallback)
+  
+  if (!hasFallbacks && providers.every(p => p.active)) return null
+
+  return (
+    <div className="mb-4 p-3 rounded-lg bg-gray-800/50 border border-gray-700">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-2 h-2 rounded-full ${hasFallbacks ? 'bg-yellow-500' : 'bg-green-500'}`} />
+        <span className="text-sm font-medium text-gray-300">Provider Status</span>
+      </div>
+      
+      <div className="space-y-2">
+        {providers.map(provider => (
+          <div 
+            key={`${provider.type}-${provider.name}`}
+            className={`flex items-center justify-between p-2 rounded ${
+              provider.fallback ? 'bg-yellow-900/20 border border-yellow-700/50' : 'bg-gray-700/30'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-400 uppercase">{provider.type}</span>
+              <span className="text-sm text-white">{provider.name}</span>
+            </div>
+            
+            {provider.fallback ? (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-yellow-400">→</span>
+                <span className="text-xs text-yellow-300">{provider.fallback}</span>
+              </div>
+            ) : (
+              <span className={`text-xs ${provider.active ? 'text-green-400' : 'text-red-400'}`}>
+                {provider.active ? 'Active' : 'Inactive'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      
+      {hasFallbacks && (
+        <p className="text-xs text-yellow-400 mt-2">
+          ⚠️ Some providers are using fallbacks
+        </p>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [roomId, setRoomId] = useState('room-1')
   const [participantId, setParticipantId] = useState(() => `user-${Math.random().toString(36).slice(2, 6)}`)
@@ -1030,6 +1090,11 @@ function App() {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [meetingSessions, setMeetingSessions] = useState<MeetingSession[]>([])
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus[]>([
+    { name: 'Whisper', type: 'asr', active: true },
+    { name: 'GPT-4', type: 'translate', active: true },
+    { name: 'Edge TTS', type: 'tts', active: true },
+  ])
   const [participants, setParticipants] = useState<Participant[]>([])
   const [localMuted, setLocalMuted] = useState(false)
   const [settings, setSettings] = useState<Settings>({
@@ -1593,6 +1658,9 @@ function App() {
             ttsPlaying={ttsPlaying}
             onInterrupt={stopTts}
           />
+
+          {/* Fallback Indicator */}
+          <FallbackIndicator providers={providerStatus} />
 
           <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
             <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
