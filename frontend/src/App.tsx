@@ -13,6 +13,8 @@ type LogEntry = {
 
 type Status = 'disconnected' | 'connecting' | 'connected' | 'error'
 
+type PipelineStage = 'idle' | 'vad' | 'asr' | 'translate' | 'tts' | 'playing'
+
 function App() {
   const [roomId, setRoomId] = useState('room-1')
   const [participantId, setParticipantId] = useState(() => `user-${Math.random().toString(36).slice(2, 6)}`)
@@ -21,18 +23,63 @@ function App() {
   const [status, setStatus] = useState<Status>('disconnected')
   const [recording, setRecording] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle')
+  const [ttsPlaying, setTtsPlaying] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const ctxRef = useRef<AudioContext | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const procRef = useRef<ScriptProcessorNode | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const ttsQueueRef = useRef<ArrayBuffer[]>([])
 
   const addLog = useCallback((entry: LogEntry) => {
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }, [])
 
+  const playTtsAudio = useCallback(async () => {
+    if (ttsQueueRef.current.length === 0) {
+      setTtsPlaying(false)
+      setPipelineStage('idle')
+      return
+    }
+
+    setTtsPlaying(true)
+    setPipelineStage('playing')
+
+    const audioData = ttsQueueRef.current.shift()!
+    
+    try {
+      // Create blob from PCM16 data and play
+      const blob = new Blob([audioData], { type: 'audio/wav' })
+      const url = URL.createObjectURL(blob)
+      
+      if (!audioRef.current) {
+        audioRef.current = new Audio()
+      }
+      
+      audioRef.current.src = url
+      
+      await audioRef.current.play()
+      
+      audioRef.current.onended = () => {
+        URL.revokeObjectURL(url)
+        playTtsAudio() // Play next in queue
+      }
+      
+      audioRef.current.onerror = () => {
+        URL.revokeObjectURL(url)
+        playTtsAudio()
+      }
+    } catch (err) {
+      console.error('TTS playback error:', err)
+      playTtsAudio()
+    }
+  }, [])
+
   const connect = useCallback(async () => {
     setStatus('connecting')
+    setPipelineStage('idle')
     try {
       const res = await fetch(`${BACKEND}/audio/token?room_id=${encodeURIComponent(roomId)}&participant_id=${encodeURIComponent(participantId)}`)
       const { token, ws_url } = await res.json()
@@ -53,31 +100,62 @@ function App() {
       }
 
       ws.onmessage = (ev) => {
+        if (ev.data instanceof Blob) {
+          // Binary TTS audio data
+          ev.data.arrayBuffer().then(buffer => {
+            ttsQueueRef.current.push(buffer)
+            if (!ttsPlaying) {
+              playTtsAudio()
+            }
+          })
+          return
+        }
+
         try {
           const msg = JSON.parse(ev.data)
           addLog({ text: msg.text, lang: msg.lang, event: msg.event, ts: Date.now() })
+          
+          // Update pipeline stage based on event
+          switch (msg.event) {
+            case 'vad_end':
+              setPipelineStage('asr')
+              break
+            case 'transcript':
+              setPipelineStage('translate')
+              break
+            case 'translation':
+              setPipelineStage('tts')
+              break
+            default:
+              break
+          }
         } catch {
-          // binary data
+          // binary data already handled
         }
       }
 
       ws.onclose = (e) => {
         setStatus('disconnected')
         setRecording(false)
+        setPipelineStage('idle')
+        setTtsPlaying(false)
+        ttsQueueRef.current = []
         addLog({ text: `Disconnected (code=${e.code})`, event: 'info', ts: Date.now() })
       }
 
       ws.onerror = () => {
         setStatus('error')
+        setPipelineStage('idle')
         addLog({ text: 'WebSocket error', event: 'error', ts: Date.now() })
       }
 
       wsRef.current = ws
     } catch (err) {
       setStatus('error')
+      setPipelineStage('idle')
       addLog({ text: `Connection failed: ${err}`, event: 'error', ts: Date.now() })
     }
-  }, [roomId, participantId, sourceLang, targetLang, addLog])
+  }, [roomId, participantId, sourceLang, targetLang, addLog, playTtsAudio, ttsPlaying])
 
   const startRecording = useCallback(async () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
@@ -132,6 +210,11 @@ function App() {
     stopRecording()
     wsRef.current?.close()
     wsRef.current = null
+    ttsQueueRef.current = []
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+    }
   }, [stopRecording])
 
   useEffect(() => {
@@ -165,9 +248,41 @@ function App() {
     info: 'log-entry log-info',
   }
 
+  const stageStyles: Record<PipelineStage, string> = {
+    idle: 'bg-gray-700 text-gray-400',
+    vad: 'bg-yellow-700 text-yellow-100',
+    asr: 'bg-blue-700 text-blue-100',
+    translate: 'bg-purple-700 text-purple-100',
+    tts: 'bg-orange-700 text-orange-100',
+    playing: 'bg-green-700 text-green-100 animate-pulse',
+  }
+
   return (
-    <main style={{ maxWidth: '640px', margin: '0 auto', padding: '1.5rem' }}>
+    <main style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem' }}>
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem' }}>VizTR Meet</h1>
+
+      {/* Pipeline Status Bar */}
+      <div className="flex gap-2 mb-4">
+        {[
+          { key: 'vad', label: 'VAD', stage: 'vad' },
+          { key: 'asr', label: 'ASR', stage: 'asr' },
+          { key: 'translate', label: 'Translate', stage: 'translate' },
+          { key: 'tts', label: 'TTS', stage: 'tts' },
+          { key: 'playing', label: 'Playing', stage: 'playing' },
+        ].map(({ key, label, stage }) => (
+          <div
+            key={key}
+            className={`px-3 py-1 rounded text-sm font-medium ${stageStyles[pipelineStage === stage ? stage : 'idle']} transition-colors`}
+          >
+            {label}
+          </div>
+        ))}
+        {ttsPlaying && (
+          <div className="ml-auto px-3 py-1 rounded text-sm font-medium bg-green-700 text-green-100 animate-pulse">
+            🔊 Playing
+          </div>
+        )}
+      </div>
 
       <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -223,6 +338,42 @@ function App() {
       <InstallPrompt />
     </main>
   )
+}
+
+const langOptions = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'zh', label: 'Chinese' },
+]
+
+const targetLangOptions = langOptions.filter(l => l.value !== 'auto')
+
+const statusStyles: Record<Status, string> = {
+  connected: 'status-badge status-connected',
+  connecting: 'status-badge status-connecting',
+  error: 'status-badge status-error',
+  disconnected: 'status-badge status-disconnected',
+}
+
+const logStyles: Record<string, string> = {
+  transcript: 'log-entry log-transcript',
+  translation: 'log-entry log-translation',
+  vad_end: 'log-entry log-vad',
+  error: 'log-entry log-error',
+  info: 'log-entry log-info',
+}
+
+const stageStyles: Record<PipelineStage, string> = {
+  idle: 'bg-gray-700 text-gray-400',
+  vad: 'bg-yellow-700 text-yellow-100',
+  asr: 'bg-blue-700 text-blue-100',
+  translate: 'bg-purple-700 text-purple-100',
+  tts: 'bg-orange-700 text-orange-100',
+  playing: 'bg-green-700 text-green-100 animate-pulse',
 }
 
 export default App

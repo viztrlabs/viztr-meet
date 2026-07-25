@@ -1,6 +1,6 @@
 import logging
 from viztrmeet.core.session import VoxTRSession
-from viztrmeet.services.registry import transcribe_with_failover, translate_with_provider, get_tts_provider
+from viztrmeet.services.registry import transcribe_with_failover, translate_with_provider, get_tts_provider, synthesize_speech
 
 logger = logging.getLogger(__name__)
 
@@ -25,3 +25,13 @@ async def process_chunk(
         transcript, session.source_lang, session.target_lang
     )
     await send_json({"event": "translation", "text": translated, "lang": session.target_lang})
+
+    # Generate TTS for translated text
+    try:
+        tts_audio = await synthesize_speech(translated, session.target_lang)
+        if tts_audio:
+            await send_json({"event": "tts_start", "text": translated})
+            await send_bytes(tts_audio)
+            await send_json({"event": "tts_end"})
+    except Exception as e:
+        logger.warning("TTS synthesis failed", exc_info=e)

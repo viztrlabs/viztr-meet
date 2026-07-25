@@ -13,10 +13,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from viztrmeet.core.config import settings
 from viztrmeet.core.session import VoxTRSession, active_sessions
 from viztrmeet.core.pipeline import process_chunk
-from viztrmeet.services.livekit import livekit_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Lazy import for livekit
+livekit_service = None
 
 
 def record_error(component: str, error_type: str):
