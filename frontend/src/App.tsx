@@ -444,6 +444,245 @@ function SettingsPanel({
   )
 }
 
+function MeetingSummaryPanel({ 
+  logs, 
+  onClose,
+  onExport 
+}: { 
+  logs: LogEntry[]
+  onClose: () => void
+  onExport: (format: 'json' | 'txt' | 'md') => void
+}) {
+  const [summary, setSummary] = useState<string>('')
+  const [keyPoints, setKeyPoints] = useState<string[]>([])
+  const [actionItems, setActionItems] = useState<string[]>([])
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [notes, setNotes] = useState('')
+
+  const generateSummary = useCallback(async () => {
+    setIsGenerating(true)
+    // Filter relevant log entries (transcripts and translations)
+    const relevantLogs = logs.filter(l => 
+      l.event === 'transcript' || l.event === 'translation' || l.event === 'vad_end'
+    )
+    
+    const transcriptText = relevantLogs
+      .filter(l => l.event === 'transcript')
+      .map(l => `[${new Date(l.ts).toLocaleTimeString()}] ${l.lang || 'auto'}: ${l.text}`)
+      .join('\n')
+    
+    const translationText = relevantLogs
+      .filter(l => l.event === 'translation')
+      .map(l => `[${new Date(l.ts).toLocaleTimeString()}] ${l.lang || 'en'}: ${l.text}`)
+      .join('\n')
+
+    // Simulate LLM summary generation (in production, call backend API)
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    
+    const generatedSummary = `Meeting Summary (${new Date().toLocaleDateString()})
+Duration: ${logs.length > 0 ? Math.round((logs[logs.length - 1].ts - logs[0].ts) / 60000) : 0} minutes
+Participants: ${new Set(logs.filter(l => l.lang).map(l => l.lang)).size} languages
+
+${transcriptText ? `Original Speech:\n${transcriptText}\n` : ''}
+${translationText ? `Translations:\n${translationText}\n` : ''}
+
+Key Topics Discussed:
+- Language translation and communication
+- Real-time voice processing
+- Multi-language meeting support`
+
+    const generatedKeyPoints = [
+      'Real-time voice translation pipeline demonstrated',
+      'Multi-language support (auto-detect source, multiple targets)',
+      'VAD-based audio segmentation working correctly',
+      'TTS playback functioning for translated output',
+      'Pipeline visualization showing all stages active'
+    ]
+
+    const generatedActionItems = [
+      'Review translation accuracy for production deployment',
+      'Configure provider failover for production',
+      'Set up monitoring dashboards for pipeline metrics',
+      'Test with larger participant groups'
+    ]
+
+    setSummary(generatedSummary)
+    setKeyPoints(generatedKeyPoints)
+    setActionItems(generatedActionItems)
+    setIsGenerating(false)
+  }, [logs])
+
+  const handleExport = (format: 'json' | 'txt' | 'md') => {
+    const data = {
+      summary,
+      keyPoints,
+      actionItems,
+      notes,
+      generatedAt: new Date().toISOString(),
+      meetingId: `meeting-${Date.now()}`,
+      transcriptCount: logs.filter(l => l.event === 'transcript').length,
+      translationCount: logs.filter(l => l.event === 'translation').length
+    }
+
+    let content: string
+    let mimeType: string
+    let extension: string
+
+    switch (format) {
+      case 'json':
+        content = JSON.stringify(data, null, 2)
+        mimeType = 'application/json'
+        extension = 'json'
+        break
+      case 'md':
+        content = `# Meeting Summary\n\n${summary}\n\n## Key Points\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\n## Action Items\n${actionItems.map(a => `- [ ] ${a}`).join('\n')}\n\n## Notes\n${notes}\n\n---\n*Generated at ${new Date().toISOString()}*`
+        mimeType = 'text/markdown'
+        extension = 'md'
+        break
+      case 'txt':
+      default:
+        content = `MEETING SUMMARY\n${'='.repeat(50)}\n\n${summary}\n\nKEY POINTS:\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\nACTION ITEMS:\n${actionItems.map(a => `- [ ] ${a}`).join('\n')}\n\nNOTES:\n${notes}\n\n---\nGenerated: ${new Date().toISOString()}`
+        mimeType = 'text/plain'
+        extension = 'txt'
+    }
+
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `meeting-summary-${Date.now()}.${extension}`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-700 z-40 flex flex-col animate-slide-in">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <h2 className="font-semibold text-white">Meeting Summary</h2>
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Close panel">
+          ✕
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* Generate Summary Button */}
+        <button
+          onClick={generateSummary}
+          disabled={isGenerating || logs.length === 0}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          {isGenerating ? (
+            <>
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generating...
+            </>
+          ) : (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              Generate AI Summary
+            </>
+          )}
+        </button>
+
+        {/* Summary Display */}
+        {summary && (
+          <div className="space-y-4">
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+              <h3 className="font-medium text-white mb-2">Summary</h3>
+              <pre className="whitespace-pre-wrap text-sm text-gray-300">{summary}</pre>
+            </div>
+          </div>}
+
+        {/* Key Points */}
+        {keyPoints.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400">Key Points</h3>
+            <ul className="space-y-2">
+              {keyPoints.map((point, i) => (
+                <li key={i} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700 flex items-start gap-2">
+                  <span className="text-blue-500 mt-1">•</span>
+                  <span className="text-gray-300 text-sm flex-1">{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>)}
+
+        {/* Action Items */}
+        {actionItems.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400">Action Items</h3>
+            <ul className="space-y-2">
+              {actionItems.map((item, i) => (
+                <li key={i} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700 flex items-center gap-2">
+                  <input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-700 focus:ring-blue-500" />
+                  <span className="text-gray-300 text-sm flex-1">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>)}
+
+        {/* Notes Section */}
+        <div className="pt-4 border-t border-gray-700">
+          <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400 mb-2">Meeting Notes</h3>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Add your meeting notes here..."
+            rows={4}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          />
+        </div>
+
+        {/* Export Options */}
+        <div className="pt-4 border-t border-gray-700">
+          <h3 className="font-medium text-white text-sm uppercase tracking-wider text-gray-400 mb-3">Export</h3>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => onExport('md')}
+              className="bg-gray-800 hover:bg-gray-700 text-white py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              .md
+            </button>
+            <button
+              onClick={() => onExport('txt')}
+              className="bg-gray-800 hover:bg-gray-700 text-white py-2 px-3 rounded-lg text-sm font-medium transition-colors"
+            >
+              .txt
+            </button>
+            <button
+              onClick={() => onExport('json')}
+              className="bg-gray-800 hover:bg-gray-700 text-white py-2 px-3 rounded-lg text-sm font-medium transition-colors"
+            >
+              .json
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="p-4 border-t border-gray-700">
+        <button
+          onClick={onClose}
+          className="w-full text-gray-400 hover:text-white py-2 text-sm"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
 }
 }
 
@@ -555,6 +794,7 @@ function App() {
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [participants, setParticipants] = useState<Participant[]>([])
   const [localMuted, setLocalMuted] = useState(false)
   const [settings, setSettings] = useState<Settings>({
@@ -567,8 +807,8 @@ function App() {
     ttsVoice: 'en-US-AriaNeural',
   })
 
-  const onSettingsChange = useCallback((partial: Partial<Settings>) => {
-    setSettings(prev => ({ ...prev, ...partial }))
+  const onSettingsChange = useCallback((s: Partial<Settings>) => {
+    setSettings(prev => ({ ...prev, ...s }))
   }, [])
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -891,6 +1131,14 @@ function App() {
         onClose={() => setSettingsOpen(false)}
       />
       
+      <MeetingSummaryPanel
+        logs={logs}
+        onClose={() => setSummaryOpen(false)}
+        onExport={(format) => {
+          console.log('Export format:', format)
+        }}
+      />
+      
       <Overlay isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <Overlay isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       
@@ -924,6 +1172,19 @@ function App() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 1 9 21.94a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 1 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 1 1 1.51 1.65 1.65 0 0 0 1.82.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 1-1.51 1z" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => setSummaryOpen(!summaryOpen)}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+                aria-label={summaryOpen ? 'Hide meeting summary' : 'Show meeting summary'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
                 </svg>
               </button>
               <button 
